@@ -1,0 +1,157 @@
+<html>
+    <head>
+        <title>Croquet Navisens</title>
+        <link rel="shortcut icon" href="../icon.png">
+
+        <!-- <script src="../bose-ar-web-sdk.min.js"></script> -->
+        <script src="https://aframe.io/releases/1.0.3/aframe.min.js"></script>
+        <script src="https://croquet.studio/sdk/croquet-latest.min.js"></script>
+    </head>
+
+    <body>
+        <bose-ar-device style="z-index: 3; position: absolute;" rotation="20" head-shake head-nod double-tap></bose-ar-device>
+        <script>
+            const order = "YXZ";
+            const bose = {
+                element : document.querySelector("bose-ar-device"),
+                euler : new THREE.Euler(undefined, undefined, undefined, order),
+                eulerOrigin : new THREE.Euler(undefined, undefined, undefined, order),
+                isEnabled : false,
+                recallibrate : true,
+                order,
+                callibrate() {
+                    this.eulerOrigin.copy(this.euler);
+                    this.recallibrate = false;
+                },
+                scalar : {
+                    x : 1,
+                    y : 1,
+                    z : 1,
+                },
+            };
+
+            bose.element.addEventListener("connect", event => {
+                cone.object3D.rotation.order = order;
+                
+                bose.element.addEventListener("doubleTap", () => {
+                    bose.recallibrate = true;
+                });
+
+                bose.element.addEventListener("rotation", event => {
+                    bose.euler.x = Number(bose.element.getAttribute("rotationpitch")) + (Math.PI/2);
+                    bose.euler.y = -Number(bose.element.getAttribute("rotationyaw"));
+                    bose.euler.z = Number(bose.element.getAttribute("rotationroll"));
+
+                    if(bose.recallibrate)
+                        bose.callibrate();
+
+                    bose.euler.x -= bose.eulerOrigin.x;
+                    bose.euler.y -= bose.eulerOrigin.y;
+                    bose.euler.z -= bose.eulerOrigin.z;
+
+                    cone.object3D.rotation.x = bose.euler.x * bose.scalar.x;
+                    cone.object3D.rotation.y = bose.euler.y * bose.scalar.y;
+                    cone.object3D.rotation.z = bose.euler.z * bose.scalar.z;
+                });
+            });
+        </script>
+
+        <a-scene>
+            <a-entity position="0 22 18" rotation="-90 0 0">
+                <a-camera></a-camera>
+            </a-entity>
+            <a-entity id=lines></a-entity>
+            <a-entity position="0 0 0" id=cone>
+                <a-cone position="0 0 0" scale="0.2 0.5 0.2" rotation="90 180 0" color="#EF2D5E"></a-cone>
+            </a-entity>
+            <a-sky color="#CAF3FF"></a-sky>
+        </a-scene>
+
+        <script>
+            const boseOffset = {
+                x : 0,
+                y : -Math.PI/8,
+                z : 0,
+            }
+            function setupCroquet() {
+                class Model extends Croquet.Model {
+                    init() {
+                        this.subscribe(this.sessionId, "packet-send", this.packetSend);
+                        this.subscribe(this.sessionId, "bose-send", this.boseSend);
+                    }
+                    packetSend(packet) {
+                        this.publish(this.sessionId, "packet-receive", packet);
+                    }
+                    boseSend(rotation) {
+                        this.publish(this.sessionId, "bose-receive", rotation);
+                    }
+                }
+
+                class HostView extends Croquet.View {
+                    constructor(model) {
+                        super(model);
+                        this.numberOfLines = 0;
+                        this.subscribe(this.sessionId, "packet-receive", packet => {
+                            const {heading, timestamp, global, local, quaternion} = packet.data[1];
+                            console.log(`\nPACKET #${this.numberOfLines}`);
+                            console.log(`position: ${local.x.toFixed(4)}, ${local.y.toFixed(4)}, ${local.z.toFixed(4)}`);
+                            console.log(`heading: ${heading.toFixed(4)}°`);
+                            console.log(`timestamp: ${timestamp}`);
+                            console.log(`quaternion: [${quaternion.w.toFixed(4)}, ${quaternion.x.toFixed(4)}, ${quaternion.y.toFixed(4)}, ${quaternion.z.toFixed(4)}]`);
+
+                            const position = local;
+                            const start = cone.object3D.position;
+                            const end = {
+                                x : position.x,
+                                y : position.z,
+                                z : -position.y,
+                            };
+                            lines.setAttribute(`line__${this.numberOfLines++}`, `start: ${start.x}, ${start.y}, ${start.z}; end: ${end.x}, ${end.y}, ${end.z}; color: black;`);
+                            Object.assign(cone.object3D.position, end);
+
+
+                        });
+
+                        this.subscribe(this.sessionId, "bose-receive", rotation => {
+                            cone.object3D.rotation.x = rotation.x + boseOffset.x;
+                            cone.object3D.rotation.y = rotation.y + boseOffset.y;
+                            cone.object3D.rotation.z = rotation.z + boseOffset.z;
+                        });
+                    }
+                }
+
+                class NavisensView extends Croquet.View {
+                    constructor(model) {
+                        super(model);
+                        window.view = this;
+                    }
+                }
+
+                Model.register();
+                Croquet.startSession("croquet-navisens", Model, navigator.platform == "Win32"? HostView:NavisensView);
+            }
+
+            function addScript() {
+                const croquetScript = document.createElement("script");
+                croquetScript.src = "https://croquet.studio/sdk/croquet-latest.min.js";
+                document.body.appendChild(croquetScript);
+            }
+
+            function addSocketListener() {
+                socket_navisens_cloud.io.on("packet", packet => {
+                    view.publish(view.sessionId, "packet-send", packet);
+                });
+            }
+
+            if(window.Croquet !== undefined) {
+                setupCroquet();
+            }
+            else {
+                addScript();
+            }
+
+            // setupCroquet();
+            // addSocketListener();
+        </script>
+    </body>
+</html>

@@ -1,0 +1,83 @@
+<html>
+    <head>
+        <title>Croquet Navisens</title>
+        <link rel="shortcut icon" href="../icon.png">
+
+        <script src="../bose-ar-web-sdk.min.js"></script>
+        <script src="https://croquet.studio/sdk/croquet-latest.min.js"></script>
+    </head>
+
+    <body>
+        <bose-ar-device style="z-index: 3; position: absolute;" rotation="20" head-shake head-nod double-tap></bose-ar-device>
+        <script>
+            const order = "YXZ";
+            const bose = {
+                element : document.querySelector("bose-ar-device"),
+                euler : new THREE.Euler(undefined, undefined, undefined, order),
+                eulerOrigin : new THREE.Euler(undefined, undefined, undefined, order),
+                recallibrate : false,
+                order,
+                callibrate() {
+                    this.eulerOrigin.copy(this.euler);
+                    this.recallibrate = false;
+                },
+                scalar : {
+                    x : 1,
+                    y : 1,
+                    z : 1,
+                },
+            };
+
+            bose.element.addEventListener("connect", event => {
+                
+                bose.element.addEventListener("doubleTap", () => {
+                    bose.recallibrate = true;
+                });
+
+                bose.element.addEventListener("rotation", event => {
+                    bose.euler.x = Number(bose.element.getAttribute("rotationpitch")) + (Math.PI/2);
+                    bose.euler.y = -Number(bose.element.getAttribute("rotationyaw"));
+                    bose.euler.z = Number(bose.element.getAttribute("rotationroll"));
+
+                    if(bose.recallibrate)
+                        bose.callibrate();
+
+                    bose.euler.x -= bose.eulerOrigin.x;
+                    bose.euler.y -= bose.eulerOrigin.y;
+                    bose.euler.z -= bose.eulerOrigin.z;
+
+                    view.publish(view.sessionId, "bose-send", {
+                        x : bose.euler.x * bose.scalar.x,
+                        y : bose.euler.y * bose.scalar.y,
+                        z : bose.euler.z * bose.scalar.z,
+                    });
+                });
+            });
+        </script>
+
+        <script>
+            class Model extends Croquet.Model {
+                init() {
+                    this.subscribe(this.sessionId, "packet-send", this.packetSend);
+                    this.subscribe(this.sessionId, "bose-send", this.boseSend);
+                }
+                packetSend(packet) {
+                    this.publish(this.sessionId, "packet-receive", packet);
+                }
+                boseSend(rotation) {
+                    this.publish(this.sessionId, "bose-receive", rotation);
+                }
+            }
+
+            class BoseView extends Croquet.View {
+                constructor(model) {
+                    super(model);
+                    window.view = this;
+                }
+            }
+
+            Model.register();
+            Croquet.startSession("croquet-navisens", Model, BoseView);
+        </script>
+    </body>
+</html>

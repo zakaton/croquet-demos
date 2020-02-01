@@ -1,0 +1,46 @@
+<html>
+    <head>
+        <title>Viewer</title>
+        <link rel="shortcut icon" href="../icon.png" type="image/x-icon" />
+
+        <script src="https://croquet.studio/sdk/croquet-latest.min.js"></script>
+    </head>
+
+    <body>
+        <h1>Viewer</h1>
+        <video id=video></video>
+        <button id=connectButton>Connect</button>
+    </body>
+
+    <script type="module" defer>
+        import Extender from "../../../croquet-extensions/extension.js";
+        import StreamingExtension from "../../../croquet-extensions/streaming/extension.js";
+        
+        import {BroadcasterModel} from "../model.js";
+
+        class View extends Extender.extendView(Croquet.View, StreamingExtension.viewExtension) {            constructor(model) {
+                super(model);
+                window.view = this;
+
+                this.loadFromLocalStorage();
+                this.register();
+
+                connectButton.addEventListener("click", event => {
+                    this.connectPeer(this.model.host)
+                        .then(() => {
+                            connectButton.disabled = true;
+                            this.peers[this.model.host].on("stream", stream => {
+                                video.srcObject = stream;
+                            });
+
+                            this.peers[this.model.host].on("track", (track, stream) => {
+                                video.srcObject = stream;
+                            });
+                        });
+                });
+            }
+        }
+
+        Croquet.startSession("croquet-demos-broadcaster-0", BroadcasterModel, View);
+    </script>
+</html>
