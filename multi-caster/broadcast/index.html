@@ -8,7 +8,8 @@
 
     <body>
         <h1>Broadcaster</h1>
-        <video onclick="this.muted = !this.muted" autoplay id=outputVideo></video>
+        <video width=300 height=300 onclick="this.muted = !this.muted" autoplay id=outputVideo></video>
+        <canvas style="display: none;" id=canvas width=300 height=300></canvas>
         <div id=mediaSources></div>
     </body>
 
@@ -18,7 +19,8 @@
         
         import {MulticamModel, BroadcasterModel} from "../model.js";
 
-        class MulticamView extends Extender.extendView(Croquet.View, StreamingExtension.viewExtension) {            constructor(model) {
+        class MulticamView extends Extender.extendView(Croquet.View, StreamingExtension.viewExtension) {
+            constructor(model) {
                 super(model);
                 this.mediaStreams = [];
 
@@ -36,7 +38,7 @@
                     var video = mediaSources.querySelector(`video[data-user-index="${userIndex}"]`);
                     if(video == null) {
                         var video = document.createElement("video");
-                        video.addEventListener("click", event => outputVideo.srcObject = video.srcObject);
+                        video.addEventListener("click", event => this.dispatchEvent({type: "sourceChange", message: {userIndex, video}}));
                         mediaSources.appendChild(video);
                         video.autoplay = true;
                         video.muted = true;
@@ -66,11 +68,12 @@
             constructor(model) {
                 super(model);
 
-                this.outputIndex;
-                this.outputStream = new MediaStream();
+                this.outputStream = canvas.captureStream();
                 outputVideo.srcObject = this.outputStream;
 
                 window.view = this;
+
+                this.outputContext = canvas.getContext("2d");
 
                 this.loadFromLocalStorage();
                 this.register();
@@ -80,24 +83,86 @@
                         timestamp : Date.now(),
                     }));
 
-                Croquet.startSession("croquet-demos-multicast-0", MulticamModel, MulticamView)
+                Croquet.startSession("croquet-demos-multicam-3", MulticamModel, MulticamView)
                     .then(session => {
                         const {view} = session;
                         this.multicamView = view;
 
-                        view.addEventListener("peer-connected", event => {
-                            const {peer, userIndex} = event.message;
-                            // new cameras
+                        this.multicamView.addEventListener("sourceChange", event => {
+                            const {video, userIndex} = event.message;
+                            this.outputIndex = userIndex;
                         });
 
-                        this.addEventListener("peer-connected", event => {
+                        view.addEventListener("peer-connected", event => {
                             const {peer, userIndex} = event.message;
-                            // new viewers
+                            // NEW CAMERA SOURCE
+                            peer.on("track", (track, stream) => {
+                                if(this.outputIndex == userIndex) {
+                                    this.outputIndex = userIndex;
+                                }
+                            });
+                            peer.on("stream", (stream) => {
+                                if(this.outputIndex == userIndex) {
+                                    this.outputIndex = userIndex;
+                                }
+                            });
+                        });
+
+                        this.subscribe(this.sessionId, "watch-stream", _data => {
+                            const {fromIndex, data} = _data;
+                            this.connectPeer(fromIndex)
+                                    .then(peer => {
+                                        peer.addStream(this.outputStream);
+                                    });
                         });
                     });
             }
+
+            get outputIndex() {
+                return this._outputIndex;
+            }
+            set outputIndex(userIndex) {
+                const video = mediaSources.querySelector(`video[data-user-index="${userIndex}"]`);
+
+                if(video !== null) {
+                    this._outputIndex = userIndex;
+
+                    console.log("CHANGING");
+
+                    if(this.intervalId !== undefined) {
+                        window.clearInterval(this.intervalId);
+                        delete this.intervalId;
+                    }
+
+                    // fix the canvas width/height issue
+                    this.intervalId = window.setInterval(() => {
+                        this.outputContext.drawImage(video, 0, 0, canvas.width, canvas.height);
+                    }, Math.floor(1000/24));
+
+                    console.log(this.intervalId);
+
+                    this.peers.forEach((peer, userIndex) => {
+                        if(this.isConnectedToUser(userIndex)) {
+                            this.outputStream.getAudioTracks().forEach(track => {
+                                peer.removeTrack(track, this.outputStream);
+                            });
+                            video.srcObject.getAudioTracks().forEach(track => {
+                                peer.addTrack(track, this.outputStream);
+                            });
+                        }
+                    });
+
+                    this.outputStream.getAudioTracks().forEach(track => {
+                        this.outputStream.removeTrack(track);
+                    });
+                    video.srcObject.getAudioTracks().forEach(track => {
+                        if(!this.outputStream.getAudioTracks().includes(track))
+                            this.outputStream.addTrack(track);
+                    });
+                }
+            }
         }
 
-        Croquet.startSession("croquet-demos-broadcaster-0", BroadcasterModel, BroadcasterView);
+        Croquet.startSession("croquet-demos-broadcaster-3", BroadcasterModel, BroadcasterView);
     </script>
 </html>

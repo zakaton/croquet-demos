@@ -8,8 +8,8 @@
 
     <body>
         <h1>Viewer</h1>
-        <video id=video></video>
-        <button id=connectButton>Connect</button>
+        <video autoplay id=video></video>
+        <button id=connectButton>Watch Stream</button>
     </body>
 
     <script type="module" defer>
@@ -25,22 +25,27 @@
                 this.loadFromLocalStorage();
                 this.register();
 
-                connectButton.addEventListener("click", event => {
-                    this.connectPeer(this.model.host)
-                        .then(() => {
-                            connectButton.disabled = true;
-                            this.peers[this.model.host].on("stream", stream => {
-                                video.srcObject = stream;
-                            });
+                this.addEventListener("peer-connected", event => {
+                    const {peer, userIndex} = event.message;
 
-                            this.peers[this.model.host].on("track", (track, stream) => {
-                                video.srcObject = stream;
-                            });
-                        });
+                    console.log("connected to broadcaster")
+                    this.peers[this.model.host].on("stream", stream => {
+                        video.srcObject = stream;
+                        console.log("STREAM!")
+                    });
+
+                    this.peers[this.model.host].on("track", (track, stream) => {
+                        video.srcObject = stream;
+                        console.log("STREAM TRACK")
+                    });
+                });
+
+                connectButton.addEventListener("click", event => {
+                    this.broadcastSigned(this.sessionId, "watch-stream");
                 });
             }
         }
 
-        Croquet.startSession("croquet-demos-broadcaster-0", BroadcasterModel, View);
+        Croquet.startSession("croquet-demos-broadcaster-3", BroadcasterModel, View);
     </script>
 </html>
