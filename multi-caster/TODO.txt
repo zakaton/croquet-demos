@@ -1,3 +1,19 @@
-test audio
-canvas width/height ratio (center it?)
-DEMO!!!!
+LESSONS LEARNED
+    Use a MediaStreamDestination node for audio and canvas.captureStream() for capturing audio/video
+    This allows me to change sources locally without changing the simple-peer stream/tracks
+    This can work for remote cameras/microphones and the broadcaster (don't need to iterate though all viewer peers to update streams)
+        Using this system for cameras/microphones makes the source switcher much easier (don't need to remove/add tracks constantly)
+    I can also make a BaseClass for the broadcaster & mediastream
+        take multiple input streams and output a single stream
+        difference is the origin of input streams (select local streams vs croquet-peer streams)
+        another difference is the output (a single output to a single "host mixer" vs a set of public "viewers")
+    How this can be an extension
+        a "multiStream" canvas/mediaStreamDestination you use to stream over simple-peer
+        "switching" streams takes a stream and draws it to the canvas & pipes the audio to mediaStreamDestination
+        creates a video, a canvas to capture it, and audioContext for nodes
+        provides a .canvas, .mediaStreamDestination, .stream, .audioContext, streams{videos:, mediaStreamNodes:}
+        can provide a .switchStream() that can take a track, stream, or video and it'll create an audioNode and video for it
+        can also provide a .createMultiStreamSession that provides a QR code and unique session based on their private key
+            any View can create a sub-session based on the .multiStreamSession
+            can create a glitch website where the session name is a query parameter (select local sources to stream to the host)
+                the glitch website can create a Media Stream Router system

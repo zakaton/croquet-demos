@@ -126,9 +126,9 @@
 
                             const track = mediaStream.getTracks().find(track => track.kind == type);
                             if(track) {
-                                this.mediaStream.addTrack(track);
                                 if(this.isConnectedToUser(this.model.host))
                                     this.peers[this.model.host].addTrack(track, this.mediaStream);
+                                this.mediaStream.addTrack(track);
                             }
                         });
                     });
@@ -147,6 +147,6 @@
             }
         }
 
-        Croquet.startSession("croquet-demos-multicam-3", MulticamModel, View);
+        Croquet.startSession("croquet-demos-multicam-4", MulticamModel, View);
     </script>
 </html>

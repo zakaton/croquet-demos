@@ -8,7 +8,7 @@
 
     <body>
         <h1>Viewer</h1>
-        <video autoplay id=video></video>
+        <video onclick="this.muted = !this.muted" autoplay id=video></video>
         <button id=connectButton>Watch Stream</button>
     </body>
 
@@ -27,7 +27,7 @@
 
                 this.addEventListener("peer-connected", event => {
                     const {peer, userIndex} = event.message;
-
+                    connectButton.disabled = true;
                     console.log("connected to broadcaster")
                     this.peers[this.model.host].on("stream", stream => {
                         video.srcObject = stream;
@@ -46,6 +46,6 @@
             }
         }
 
-        Croquet.startSession("croquet-demos-broadcaster-3", BroadcasterModel, View);
+        Croquet.startSession("croquet-demos-broadcaster-4", BroadcasterModel, View);
     </script>
 </html>

@@ -8,7 +8,7 @@
 
     <body>
         <h1>Broadcaster</h1>
-        <video width=300 height=300 onclick="this.muted = !this.muted" autoplay id=outputVideo></video>
+        <video width=300 height=300 muted onclick="this.muted = !this.muted" autoplay id=outputVideo></video>
         <canvas style="display: none;" id=canvas width=300 height=300></canvas>
         <div id=mediaSources></div>
     </body>
@@ -67,13 +67,21 @@
         class BroadcasterView extends Extender.extendView(Croquet.View, StreamingExtension.viewExtension) {
             constructor(model) {
                 super(model);
+                window.view = this;
 
                 this.outputStream = canvas.captureStream();
                 outputVideo.srcObject = this.outputStream;
 
-                window.view = this;
-
+                this.audioContext = new AudioContext();
+                window.addEventListener("click", event => {
+                    if(this.audioContext.state !== "running")
+                        this.audioContext.resume();
+                })
+                this.mediaStreamDestination = this.audioContext.createMediaStreamDestination();
+                this.outputStream.addTrack(this.mediaStreamDestination.stream.getAudioTracks()[0]);
+                
                 this.outputContext = canvas.getContext("2d");
+                this.mediaStreamAudioSourceNodes = [];
 
                 this.loadFromLocalStorage();
                 this.register();
@@ -83,7 +91,7 @@
                         timestamp : Date.now(),
                     }));
 
-                Croquet.startSession("croquet-demos-multicam-3", MulticamModel, MulticamView)
+                Croquet.startSession("croquet-demos-multicam-4", MulticamModel, MulticamView)
                     .then(session => {
                         const {view} = session;
                         this.multicamView = view;
@@ -125,44 +133,29 @@
                 const video = mediaSources.querySelector(`video[data-user-index="${userIndex}"]`);
 
                 if(video !== null) {
+                    this.mediaStreamAudioSourceNodes[this.outputIndex]?.disconnect(this.mediaStreamDestination);
+                    
                     this._outputIndex = userIndex;
 
-                    console.log("CHANGING");
+                    if(video.srcObject.getAudioTracks().length > 0) {
+                        this.mediaStreamAudioSourceNodes[userIndex] = this.audioContext.createMediaStreamSource(video.srcObject);
+                        this.mediaStreamAudioSourceNodes[userIndex].connect(this.mediaStreamDestination);
+                    }
 
                     if(this.intervalId !== undefined) {
                         window.clearInterval(this.intervalId);
                         delete this.intervalId;
                     }
 
-                    // fix the canvas width/height issue
+                    const aspectRatio = video.videoWidth/video.videoHeight;
+                    canvas.width = canvas.height * aspectRatio;
                     this.intervalId = window.setInterval(() => {
                         this.outputContext.drawImage(video, 0, 0, canvas.width, canvas.height);
                     }, Math.floor(1000/24));
-
-                    console.log(this.intervalId);
-
-                    this.peers.forEach((peer, userIndex) => {
-                        if(this.isConnectedToUser(userIndex)) {
-                            this.outputStream.getAudioTracks().forEach(track => {
-                                peer.removeTrack(track, this.outputStream);
-                            });
-                            video.srcObject.getAudioTracks().forEach(track => {
-                                peer.addTrack(track, this.outputStream);
-                            });
-                        }
-                    });
-
-                    this.outputStream.getAudioTracks().forEach(track => {
-                        this.outputStream.removeTrack(track);
-                    });
-                    video.srcObject.getAudioTracks().forEach(track => {
-                        if(!this.outputStream.getAudioTracks().includes(track))
-                            this.outputStream.addTrack(track);
-                    });
                 }
             }
         }
 
-        Croquet.startSession("croquet-demos-broadcaster-3", BroadcasterModel, BroadcasterView);
+        Croquet.startSession("croquet-demos-broadcaster-4", BroadcasterModel, BroadcasterView);
     </script>
 </html>
