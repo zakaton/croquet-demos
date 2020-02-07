@@ -1,6 +1,6 @@
 <html>
     <head>
-        <title>Asyncronous Syncronization</title>
+        <title>Asynchronous Synchronization</title>
         <link rel="shortcut icon" href="../icon.png" type="image/x-icon" />
 
         <script src="https://croquet.studio/sdk/croquet-latest.min.js"></script>
@@ -16,19 +16,29 @@
             display: grid;
             width: 100%;
             height: 100%;
-            background-color: grey;
-            grid-template-rows: 2em 1fr 1fr;
-            grid-template-columns: 3fr 1fr;
+            background-color: white;
+            grid-template-rows: 4em 2em 1fr 1fr;
+            grid-template-columns: 70% 30%;
         }
 
         #container > * {
             padding: 5px;
         }
+
+        #title {
+            grid-row: 1;
+            grid-column: 1 / span 2;
+            background-color: rgb(255, 228, 184);
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-evenly;
+        }
         
         #source {
-            grid-row: 1;
+            grid-row: 2;
             grid-column: 1;
-            background-color: red;
+            background-color: rgb(255, 207, 207);
             display: flex;
             flex-direction: row;
         }
@@ -38,65 +48,446 @@
         }
 
         #local {
-            grid-row: 2;
+            grid-row: 3;
             grid-column: 1;
-            background-color: green;
+            background-color: rgb(212, 255, 209);
+        }
+
+        #local video, #remote video {
+            width: 100%;
         }
 
         #remote {
-            grid-row: 3;
+            grid-row: 4;
             grid-column: 1;
-            background-color: blue;
+            background-color: rgb(212, 249, 255);
+        }
+
+        #remote h2, #local h2 {
+            text-align: center;
         }
 
         #users {
-            grid-row: 1 / span 2;
+            grid-row: 2 / span 2;
             grid-column: 2;
-            background-color: yellow;
+            background-color: rgb(247, 244, 188);
         }
 
-        #chat {
-            grid-row: 3 / span 1;
+        #users li {
+            font-size: 20px;
+        }
+
+        #users h2 {
+            text-align: center;
+        }
+
+        #meetings {
+            grid-row: 4;
             grid-column: 2;
-            background-color: purple;;
+            background-color: rgb(227, 196, 145);
+        }
+
+        #meetings h2 {
+            text-align: center;
+        }
+
+        #meetings ul {
+            display: flex;
+            flex-direction: column-reverse;
+        }
+
+        #meetings [data-meeting] {
+            color: green;
+        }
+
+        #meetings input[type="checkbox"] {
+            width: 20px;
+            height: 20px
+        }
+
+        #meetings span[data-accept] {
+            cursor: pointer;
+        }
+
+        #meetings span[data-accept="true"] {
+            color: green;
+        }
+        #meetings span[data-accept="false"] {
+            color: red;
+        }
+
+        #meetings li[data-accept="true"] {
+
+        }
+        #meetings li[data-accept="false"] {
+            text-decoration: line-through;
+        }
+        #meetings li[data-started] {
+            text-decoration: line-through;
+        }
+        #meetings li[data-starting] {
+            color: blue;
         }
 
     </style>
 
     <body>
         <div id="container">
+            <div id="title">
+                <h1>Asynchronous Synchronization</h1>
+            </div>
+
             <div id="source">
-                <select id="audioSelect">
-                    <option value="">--Select Audio Source--</option>
+                <select data-source-kind="audio">
+                    <option>--Select Audio Source--</option>
+                    <option data-screen>Desktop Audio</option>
                 </select>
 
-                <select id="videoSelect">
-                    <option value="">--Select Video Source--</option>
+                <select data-source-kind="video">
+                    <option>--Select Video Source--</option>
+                    <option data-screen>Screenshare</option>
                 </select>
             </div>
 
             <div id="local">
-                <video autoplay muted id="localVideo"></video>
+                <h2>Local Video</h2>
+                <video autoplay muted id=localVideo></video>
             </div>
 
             <div id="remote">
-                <video autoplay id="remoteVideo"></video>
+                <h2>Remote Video</h2>
+                <video autoplay id=remoteVideo></video>
             </div>
 
             <div id="users">
-                <h1>Users</h1>
-                <ul>
-                    <li>User #1</li>
-                </ul>
+                <h2>Users</h2>
+                <ul id=usersList></ul>
+                <input id=deadline type="date" style="display: none;">
             </div>
 
-            <div id="chat">
-                <h1>Chat</h1>
+            <div id="meetings">
+                <h2>Meetings</h2>
+                <ul id=meetingsList></ul>
             </div>
         </div>
     </body>
 
     <script>
+        const selects = {};
+        navigator.mediaDevices.enumerateDevices()
+            .then(devices => devices.filter(device => device.kind.includes("input")))
+            .then(inputs => {                
+                document.querySelectorAll("#source > select").forEach(select => {
+                    const {sourceKind} = select.dataset;
+                    selects[sourceKind] = select;
+                });
+
+                inputs.forEach(input => {
+                    const {deviceId, groupId, kind, label} = input;                            
+                    const option = document.createElement("option");
+                        option.innerText = label.split('(')[0];
+                        Object.assign(option.dataset, {deviceId, groupId, kind, label});
+
+                    const inputKind = input.kind.replace("input", '');
+                    selects[inputKind].appendChild(option);
+                });
+            });
+    </script>
+
+    <script>
+        ["source", "local", "remote", "users"].forEach(id => {
+            window[id] = document.getElementById(id);
+        });
+    </script>
+
+    <script type="module" defer>
+        import Extender from "../../../croquet-extensions/extension.js";
+        import MultiStreamExtension from "../../../croquet-extensions/multi-stream/extension.js";
+        import UserExtension from "../../../croquet-extensions/streaming/extension.js";
         
+        class Model extends Extender.extendModel(Croquet.Model, MultiStreamExtension.modelExtension, UserExtension.modelExtension) {
+            init() {
+                super.init();
+                
+                this.subscribe(this.sessionId, "change-username", this.changeUsername);
+            }
+
+            changeUsername() {
+                const {data, user} = this.unpackSignedUserMessage(this.sessionId, "change-username", ...arguments);
+                if(data && user) {
+                    const {username} = data;
+                    user.username = data.username;
+                    this.publish(this.sessionId, "changed-name", this.users.indexOf(user));
+                }
+            }
+        }
+
+        Model.register();
+
+        class View extends Extender.extendView(Croquet.View, MultiStreamExtension.viewExtension, UserExtension.viewExtension) {
+            constructor(model) {
+                super(model);
+                this.model = model;
+                window.view = this;
+
+                this.meetings = [];
+
+                deadline.addEventListener("input", event => {
+                    const date = new Date(deadline.value);
+                    if(date.getTime() > Date.now()) {
+                        const userIndex = Number(deadline.dataset.userIndex);
+                        deadline.style.display = "none";
+
+                        var topic = '';
+                        while(topic.length == 0) {
+                            topic = window.prompt("type in a topic for the meeting");
+                        }
+
+                        const timestamp = Date.now();
+
+                        this.messageUser(this.sessionId, "offer-meeting", {date, topic, timestamp}, userIndex);
+                    }
+                });
+
+                this.subscribe(this.sessionId, "offer-meeting", data => {
+                    const message = this.decryptUserMessage(data);
+                    const {fromIndex, toIndex} = data;
+
+                    if(message) {
+                        const {topic, date, timestamp} = message;
+                        const deadlineDate = new Date(date);
+
+                        const meetingIndex = this.meetings.push({topic, date: deadlineDate, timestamp, fromIndex, toIndex})-1;
+
+                        const from = this.model.users[fromIndex].username || fromIndex;
+                        const to = this.model.users[toIndex].username || toIndex;
+
+                        const li = document.createElement("li");
+                            li.innerHTML = `
+                                Topic: ${topic}
+                                <br>
+                                With: <span data-name data-user-index="${(this.userIndex == toIndex)? fromIndex:toIndex}">${(this.userIndex == toIndex)? from:to}</span>
+                                <br>
+                                Deadline: ${deadlineDate.toDateString()}
+                            `;
+                            Object.assign(li.dataset, {fromIndex, toIndex, topic, date, meetingIndex})
+                            meetingsList.appendChild(li);
+                        
+                        if(this.userIndex == toIndex) {
+                            const spans = {
+                                accept : document.createElement("span"),
+                                reject : document.createElement("span"),
+                            };
+
+                            spans.accept.innerText = "\nAccept Meeting";
+                            spans.accept.dataset.accept = "true";
+                            spans.accept.addEventListener("click", () => {
+                                this.messageUser(this.sessionId, "answer-offer", {accept: true, meetingIndex}, fromIndex);
+                            });
+
+                            spans.reject.innerText = "\nReject Meeting";
+                            spans.reject.dataset.accept = "false";
+                            spans.reject.addEventListener("click", () => {
+                                this.messageUser(this.sessionId, "answer-offer", {accept: false, meetingIndex}, fromIndex);
+                            });
+
+                            li.appendChild(spans.accept);
+                            li.appendChild(spans.reject);
+                        }
+                    }
+                });
+
+                this.subscribe(this.sessionId, "answer-offer", data => {
+                    const message = this.decryptUserMessage(data);
+                    const {fromIndex, toIndex} = data;
+
+                    if(message) {
+                        const {meetingIndex, accept} = message;
+                        const meeting = this.meetings[meetingIndex];
+                        const date = meeting.date;
+
+                        const li = document.querySelector(`#meetings li[data-meeting-index="${meetingIndex}"]`);
+
+                        if(this.userIndex == fromIndex) {
+                            li.querySelectorAll(`#meetings li[data-meeting-index="${meetingIndex}"] span[data-accept]`).forEach(span => {
+                                span.parentElement.removeChild(span);
+                            });
+                        }
+
+                        li.dataset.accept = accept;
+
+                        if(accept) {
+                            const input = document.createElement("input");
+                            input.width
+                            input.type = "checkbox";
+                            input.addEventListener("input", event => {
+                                this.messageUser(this.sessionId, "toggle-availability", {available: input.checked, timestamp: Date.now(), meetingIndex}, (this.userIndex == toIndex)? fromIndex:toIndex);
+                            });
+                            li.appendChild(input);
+
+                            meeting.available = [];
+                                meeting.available[fromIndex] = meeting.available[toIndex] = false;
+                        }
+                    }
+                });
+
+                this.subscribe(this.sessionId, "toggle-availability", data => {
+                    const message = this.decryptUserMessage(data);
+                    const {fromIndex, toIndex} = data;
+
+                    if(message) {
+                        const {meetingIndex, available, timestamp} = message;
+                        const meeting = this.meetings[meetingIndex];
+
+                        if(!meeting.started) {
+                            meeting.available[fromIndex] = available;
+
+                            const li = document.querySelector(`#meetings li[data-meeting-index="${meetingIndex}"]`);
+                            if(fromIndex == this.userIndex)
+                                li.querySelector("input").checked = available;
+                            
+                            if(meeting.available.every(available => available)) {
+                                meeting.started = true;
+                                li.dataset.started = "true";
+                                li.removeChild(li.querySelector("input"));
+
+                                if((Date.now() - timestamp) < 1000) {
+                                    var answered = false;
+
+                                    this.addEventListener("peer-connected", event => {
+                                        const {userIndex, peer} = event.message;
+                                        
+                                        if(!answered && userIndex == (this.userIndex == fromIndex)? toIndex:fromIndex) {
+                                            li.dataset.starting = "true";
+                                            peer.on("stream", stream => {
+                                                remoteVideo.srcObject = stream;
+                                            });
+                                            peer.on("track", (track, stream) => {
+                                                console.log(stream);
+                                                remoteVideo.srcObject = stream;
+                                            });
+                                            peer.addStream(this.localStream);
+
+                                            answered = true;
+                                        }
+                                    });
+
+                                    if(this.userIndex == toIndex) {
+                                        console.log("CONNECTING")
+                                        this.connectPeer(fromIndex);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+
+                this.subscribe(this.sessionId, "new-user", userIndex => {
+                    var li = usersList.querySelector(`li[data-user-index="${userIndex}"]`);
+                    if(li == null) {
+                        li = document.createElement("li");
+                        li.dataset.userIndex = userIndex;
+                        li.innerHTML = `<span data-name>User #${userIndex}</span> `;
+    
+                        const span = document.createElement("span");
+                        span.style.cursor = "pointer";
+    
+                        if(this.userIndex == userIndex) {
+                            span.innerText = '✍️';
+                            span.addEventListener("click", event => {
+                                const username = window.prompt("type in a new username");
+                                this.username = username;
+                            });
+                        }
+                        else {
+                            span.innerText = '📅';
+                            span.addEventListener("click", event => {
+                                deadline.dataset.userIndex = userIndex;
+                                deadline.style.display = '';
+                            });
+                        }
+    
+                        li.appendChild(span);
+                        usersList.appendChild(li);
+                    }
+
+                });
+
+                this.subscribe(this.sessionId, "changed-name", userIndex => {
+                    const span = usersList.querySelector(`li[data-user-index="${userIndex}"] span[data-name]`);
+                    const username = this.model.users[userIndex].username;
+                    if(span !== null) {
+                        span.innerText = username;
+                    }
+
+                    meetings.querySelectorAll(`span[data-name][data-user-index="${userIndex}"]`).forEach(span => {
+                        span.innerText = username;
+                    });
+                });
+
+                this.loadFromLocalStorage();
+                this.register();
+
+                this.localStream = localVideo.srcObject = new MediaStream();
+
+                for(let sourceKind in selects) {
+                    const select = selects[sourceKind];
+                    
+                    select.addEventListener("input", event => {
+                        const {selectedIndex} = select;
+                        if(selectedIndex > 0) {
+                            const option = select.children[selectedIndex];
+                            
+                            const {deviceId, screen} = option.dataset;
+                            return new Promise((resolve, reject) => {
+                                if(deviceId !== undefined) {
+                                    navigator.mediaDevices.getUserMedia({
+                                        [sourceKind] : {deviceId}
+                                    }).then(stream => resolve(stream))
+                                    .catch(error => reject(error));
+                                }
+                                else {
+                                    navigator.mediaDevices.getDisplayMedia({
+                                        [sourceKind] : true,
+                                    }).then(stream => resolve(stream))
+                                    .catch(error => reject(error));
+                                }
+                            }).then(stream => {
+                                const peer = this.peers.find(peer => peer && peer.connected);
+
+                                const tracks = (sourceKind == "video")?
+                                    stream.getVideoTracks():
+                                    stream.getAudioTracks();
+                                
+                                this.localStream.getTracks().forEach(track => {
+                                    if(sourceKind == track.kind) {
+                                        if(peer)
+                                            peer.removeTrack(track, this.localStream);
+                                        this.localStream.removeTrack(track);
+                                    }
+                                });
+
+                                if(peer)
+                                    peer.addTrack(tracks[0], this.localStream);
+                                this.localStream.addTrack(tracks[0]);
+                            });
+                        }
+                    });
+                }
+            }
+
+            get username() {
+                return this.model.users[this.userIndex].username;
+            }
+            set username(username) {
+                if(username.length > 0) {
+                    this.publish(this.sessionId, "change-username", this.signData(this.sessionId, "change-username", {
+                        username,
+                    }));
+                }
+            }
+        }
+
+        Croquet.startSession("croquet-demos-async-sync-10", Model, View);
     </script>
 </html>

@@ -1,4 +1,0 @@
-layout UI
-schedule meeting
-toggle
-call
