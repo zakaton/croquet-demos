@@ -1,1 +1,1 @@
-playback all messages in order
+add an index for each message (when refreshing they show up in random orders)

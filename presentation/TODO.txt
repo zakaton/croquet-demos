@@ -1,0 +1,8 @@
+simple-peer
+webtorrent (sending audio files)
+usernames (localStorage?)
+
+NOTES
+    can put the Signature Public Key in the model to ensure ownership
+    iOS needs a value for url search params, e.g. host=whatever
+    iOS needs to be muted, but that requires a tap by the user when unmuted

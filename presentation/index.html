@@ -1,0 +1,411 @@
+<html>
+    <head>
+        <title>Croquet Presenter</title>
+        <link rel="shortcut icon" href="../icon.png" type="image/x-icon" />
+
+        <script src="https://croquet.studio/sdk/croquet-latest.min.js"></script>
+
+        <!-- https://github.com/sampotts/plyr -->
+        <script src="https://cdn.plyr.io/3.5.8/plyr.js"></script>
+        <link rel="stylesheet" href="https://cdn.plyr.io/3.5.8/plyr.css" />
+
+        <!-- https://github.com/feross/simple-peer -->
+        <script src="simplepeer.min.js"></script>
+
+        <!-- https://github.com/webtorrent/webtorrent -->
+        <script src="https://cdn.jsdelivr.net/npm/webtorrent@latest/webtorrent.min.js"></script>
+    </head>
+
+    <body>
+        <h1>Croquet Elements</h1>
+
+        <select data-croquet-urls>
+            <option value=''>--other presentations--</option>
+        </select>
+
+        <div data-croquet-video data-plyr-provider="youtube" data-plyr-embed-id="uDFxvKrMSJ0"></div>
+
+        <h2>Comments</h2>
+        <ul id=commentsList>
+
+        </ul>
+        <form name="myForm" data-croquet-form>
+            <textarea name="comment" rows="5" cols="80" placeholder="type your comments here!"></textarea>
+            <br>
+            <button type="submit">Post Comment</button>
+        </form>
+    </body>
+
+    <script>
+        const {searchParams} = new URL(document.location);
+    </script>
+
+    <script>
+        class Model extends Croquet.Model {
+            init() {
+                super.init();
+
+                this.subscribe(this.sessionId, "register-as-host", this.registerAsHost);
+                this.subscribe(this.sessionId, "view-exit", this.viewExit);
+
+                this.subscribe(this.sessionId, "host-scroll", this.scroll);
+
+                this.subscribe(this.sessionId, "host-update-video", this.updateVideo);
+                this.players = [];
+
+                this.subscribe(this.sessionId, "submit-form", this.submitForm);
+                this.comments = [];
+
+                this.subscribe(this.sessionId, "add-url", this.addURL);
+                this.urls = [];
+            }
+
+
+            ///////////////// HOST ////////////////////////////////////
+            registerAsHost(viewId) {
+                if(!this.hostViewId) {
+                    this.hostViewId = viewId;
+                    this.publish(this.sessionId, "host-join", viewId);
+                }
+            }
+
+            viewExit(viewId) {
+                if(this.hostViewId && this.hostViewId == viewId) {
+                    delete this.hostViewId;
+                    this.publish(this.sessionId, "host-exit", viewId);
+                }
+            }
+
+            ///////////////// SCROLLING ////////////////////////////
+            scroll({scrollX, scrollY, timestamp}) {
+                this.scrollX = scrollX;
+                this.scrollY = scrollY;
+                this.scrollTimestamp = timestamp;
+
+                this.publish(this.sessionId, "scroll", ...arguments);
+            }
+
+
+            //////////////////// VIDEO PLAYBACK /////////////////////////
+            updateVideo(data) {
+                const {index} = data;
+
+                const player = this.players[index] = this.players[index] || {
+                    currentTime : 0,
+                    volume : 1,
+                    speed : 1,
+                    playing : false,
+                    fullscreen : false,
+                };
+
+                ["playing", "currentTime", "volume", "speed", "fullscreen"].forEach(name => {
+                    if(data[name] !== undefined)
+                        player[name] = data[name];
+                });
+
+                this.publish(this.sessionId, "update-video", data);
+            }
+
+            /////////////////// FORMS ///////////////////////////////
+            submitForm({formData, viewId, index, timestamp}) {
+                switch(index) {
+                    case 0:
+                        const {comment} = formData;
+                        this.comments.push({comment, viewId, timestamp});
+                        const commentIndex = this.comments.length-1;
+                        this.publish(this.sessionId, "new-comment", {commentIndex});
+                        break;
+                    default:
+                        break;
+                }
+            }
+
+            //////////////////// URLS /////////////////////////////////
+            addURL({url, title}) {
+                if(!this.urls.includes(url)) {
+                    this.urls.push(url);
+                    this.publish(this.sessionId, "new-url", {url, title});
+                }
+            }
+        }
+        Model.register();
+
+        var players;
+        class View extends Croquet.View {
+            constructor(model) {
+                super(model);
+                this.model = model;
+                window.view = this;
+
+                this.dateJoined = Date.now();
+
+                this.config = {
+                    host : searchParams.get("croquet-host") !== null,
+                    scroll : searchParams.get("croquet-scroll") !== null,
+                    video : searchParams.get("croquet-video") !== null,
+                    form : searchParams.get("croquet-form") !== null,
+                };
+
+                if(this.config.host)
+                    this.registerAsHost();
+
+                ////////////////////////// SCROLLING /////////////////////////////////
+                if(this.config.scroll) {
+                    if(this.config.host) {
+                        var canPublish = true;
+
+                        window.addEventListener("scroll", event => {
+                            this.scrollX = window.scrollX;
+                            this.scrollY = window.scrollY;
+
+                            if(canPublish) {
+                                this.publishScroll();
+                                canPublish = false;
+
+                                window.setTimeout(() => {
+                                    canPublish = true;
+                                    if(event.scrollX !== this.scrollX && event.scrollY !== this.scrollY)
+                                        this.publishScroll();
+                                }, 50);
+                            }
+                        });
+                    }
+                    else {
+                        this.scroll();
+
+                        window.addEventListener("scroll", event => {
+                            this.scroll();
+                        });
+
+                        this.subscribe(this.sessionId, "scroll", data => {
+                            const {timestamp} = data;
+                            if(this.dateJoined < timestamp) {
+                                this.scroll();
+                            }
+                        });
+                    }
+                }
+
+
+                //////////////////////// VIDEO PLAYBACK //////////////////////////////
+                if(players == undefined) {
+                    const playerConfig = {};
+                    players = Plyr.setup("[data-croquet-video]", playerConfig);
+                }
+                this.players = players;
+
+                if(this.config.video) {
+                    if(this.config.host) {
+                        players.forEach((player, index) => {
+
+                            player.on("playing", event => {
+                                this.publish(this.sessionId, "host-update-video", {
+                                    index,
+                                    currentTime : player.currentTime,
+                                    playing : true,
+                                    timestamp : Date.now(),
+                                });
+                            });
+                            player.on("play", event => {
+                                this.publish(this.sessionId, "host-update-video", {
+                                    index,
+                                    currentTime : player.currentTime,
+                                    playing : true,
+                                    timestamp : Date.now(),
+                                });
+                            });
+
+                            player.on("pause", event => {
+                                this.publish(this.sessionId, "host-update-video", {
+                                    index,
+                                    currentTime : player.currentTime,
+                                    playing : false,
+                                    timestamp : Date.now(),
+                                });
+                            });
+
+                            player.on("enterfullscreen", event => {
+                                this.publish(this.sessionId, "host-update-video", {
+                                    index,
+                                    fullscreen : true,
+                                    timestamp : Date.now(),
+                                });
+                            });
+                            player.on("exitfullscreen", event => {
+                                this.publish(this.sessionId, "host-update-video", {
+                                    index,
+                                    fullscreen : false,
+                                    timestamp : Date.now(),
+                                });
+                            });
+
+                            player.on("volumechange", event => {
+                                this.publish(this.sessionId, "host-update-video", {
+                                    index,
+                                    volume : player.volume,
+                                    timestamp : Date.now(),
+                                });
+                            });
+                            player.on("ratechange", event => {
+                                this.publish(this.sessionId, "host-update-video", {
+                                    index,
+                                    speed : player.speed,
+                                    timestamp : Date.now(),
+                                });
+                            });
+
+                            player.on("timeupdate", event => {
+                                /*
+                                this.publish(this.sessionId, "host-update-video", {
+                                    index,
+                                    currentTime : player.currentTime,
+                                    timestamp : Date.now(),
+                                });
+                                */
+                            });
+                            player.on("seeked", event => {
+                                this.publish(this.sessionId, "host-update-video", {
+                                    index,
+                                    currentTime : player.currentTime,
+                                    timestamp : Date.now(),
+                                });
+                            });
+                            player.on("seeking", event => {
+                                /*
+                                this.publish(this.sessionId, "host-update-video", {
+                                    index,
+                                    currentTime : player.currentTime,
+                                    timestamp : Date.now(),
+                                });
+                                */
+                            });
+                        });
+                    }
+                    else {
+                        this.subscribe(this.sessionId, "update-video", data => {
+                            const {timestamp} = data;
+
+                            if(this.dateJoined < timestamp) {
+                                const {index, playing, fullscreen} = data;
+                                const player = players[index];
+    
+                                ["currentTime", "volume", "speed"].forEach(name => {
+                                    if(data[name] !== undefined)
+                                        player[name] = data[name];
+                                });
+    
+                                if(playing !== undefined) {
+                                    if(playing)
+                                        player.play();
+                                    else
+                                        player.pause();
+                                }
+
+                                if(fullscreen !== undefined) {
+                                    if(fullscreen)
+                                        player.fullscreen.enter();
+                                    else
+                                        player.fullscreen.exit();
+                                }
+                            }
+
+                        });
+
+                        players.forEach((player, index) => {
+                            const playerInfo = this.model.players[index];
+                            if(playerInfo) {
+                                const {playing, currentTime, volume, speed, fullscreen} = playerInfo;
+                                
+                                Object.assign(player, {speed, volume, currentTime});
+                                
+                                if(playing)
+                                    player.play();
+                                
+                                if(fullscreen)
+                                    player.fullscreen.enter();
+                            }
+                        })
+                    }
+                }
+
+                ///////////////////////// FORMS //////////////////////////
+
+                if(this.config.form) {
+                    document.querySelectorAll("form[data-croquet-form]").forEach((form, index) => {
+                        form.addEventListener("submit", event => {
+                            event.preventDefault();
+
+                            const formData = {};
+                            form.querySelectorAll("[name]").forEach(input => {
+                                formData[input.name] = input.value;
+                                input.value = '';
+                            });
+                            
+                            this.publish(this.sessionId, "submit-form", {
+                                viewId : this.viewId,
+                                formData,
+                                index,
+                                timestamp : Date.now(),
+                            });
+                        });
+                    });
+                }
+
+                this.subscribe(this.sessionId, "new-comment", data => {
+                    const {commentIndex} = data;
+                    const {comment, viewId} = this.model.comments[commentIndex];
+                    commentsList.innerHTML += `
+                        <li>${viewId}: ${comment}</li>
+                    `;
+                });
+
+
+
+                /////////////////////// EMBED ////////////////////////////
+                if(window !== window.parent) {
+                    const url = window.parent.location.href;
+                    const title = window.parent.document.title;
+                    if(!this.model.urls.includes(url)) {
+                        this.publish(this.sessionId, "add-url", {url, title});
+                    }
+                }
+
+                var select = document.querySelector("[data-croquet-urls]");
+                this.subscribe(this.sessionId, "new-url", data => {
+                    const {title, url} = data;
+                    select.innerHTML += `<option value="${url}">${title}</option>`;
+                });
+                select.addEventListener("input", event => {
+                    const url = select.value;
+                    if(url.length > 0) {
+                        window.open(url);
+                    }
+                });
+            }
+
+            registerAsHost() {
+                this.publish(this.sessionId, "register-as-host", this.viewId);
+            }
+            get isHost() {
+                return this.viewId == this.model.hostViewId;
+            }
+
+            scroll() {
+                window.scroll({
+                    left : this.model.scrollX,
+                    top : this.model.scrollY,
+                    //behavior: "smooth",
+                });
+            }
+            publishScroll() {
+                this.publish(this.sessionId, "host-scroll", {
+                    scrollX : this.scrollX,
+                    scrollY : this.scrollY,
+                    timestamp : Date.now(),
+                });
+            }
+        }
+
+        Croquet.startSession("croquet-demo-presentation-3", Model, View);
+    </script>
+</html>

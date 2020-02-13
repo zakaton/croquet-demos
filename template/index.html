@@ -1,0 +1,42 @@
+<html>
+    <head>
+        <title>Title</title>
+        <link rel="shortcut icon" href="../icon.png" type="image/x-icon" />
+
+        <script src="https://croquet.studio/sdk/croquet-latest.min.js"></script>
+    </head>
+
+    <style>
+
+    </style>
+
+    <body>
+        <h1>Title</h1>
+    </body>
+
+    <script type="module" defer>
+        import Extender from "../../../croquet-extensions/extension.js";
+        import Extension from "../../../croquet-extensions/users/extension.js";
+
+        class Model extends Extender.extendModel(Croquet.Model, Extension.modelExtension) {
+            init() {
+                super.init();
+            }
+        }
+
+        Model.register();
+
+        class View extends Extender.extendView(Croquet.View, Extension.viewExtension) {
+            constructor(model) {
+                super(model);
+                this.model = model;
+
+                window.view = this;
+
+                
+            }
+        }
+
+        Croquet.startSession("croquet-demo", Model, View);
+    </script>
+</html>
